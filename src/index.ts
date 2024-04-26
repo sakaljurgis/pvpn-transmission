@@ -30,7 +30,8 @@ async function main() {
   console.log(`External ip: ${ipInfo?.ip} Country: ${ipInfo?.country}`);
 
   if (!defaultInterface || !ipInfo) {
-    console.log('Could not get default interface or ip info');
+    console.log('Could not get default interface or ip info. Shutting down transmission service');
+    await transmissionContainer.down();
     return;
   }
 
@@ -43,7 +44,7 @@ async function main() {
 
   if (!countryOK || !internalIpOK || !externalIpOK || !interfaceOK) {
     console.log('Shutting down transmission service');
-    //await dockerContainer.down();
+    await transmissionContainer.down();
     return;
   }
 
@@ -61,14 +62,16 @@ async function main() {
   console.log(`Data received: ${JSON.stringify(data)}`);
 
   if (!data.status || !data.supported) {
-    console.log('Could not fetch new port');
+    console.log('Could not fetch new port. Shutting down transmission service');
+    await transmissionContainer.down();
     return;
   }
 
   const newPort= Number(data.status.split(" ")[1]);
 
   if (!newPort) {
-    console.log('Could not parse new port');
+    console.log('Could not parse new port Shutting down transmission service');
+    await transmissionContainer.down();
     return;
   }
 
@@ -81,7 +84,7 @@ async function main() {
 
   if (!newPortOpen) {
     console.log('Port is not open, Shutting down transmission service');
-    //await dockerContainer.down();
+    await transmissionContainer.down();
     return;
   }
 }
