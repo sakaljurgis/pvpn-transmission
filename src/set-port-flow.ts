@@ -2,28 +2,44 @@ import { Transmission } from './transmission';
 import { DockerContainer } from './docker';
 import { settings } from './settings';
 import { notificationService } from './notification';
+import { kvDataStorage } from './kv-data-storage';
+import { dailyCheckIn } from './check-in';
 
 async function downTransmission(transmissionContainer: DockerContainer, reason: string) {
   console.log(reason);
 
+  await kvDataStorage.set({ isServiceRunning: false });
   await notificationService.sendNotification(reason, true);
   return await transmissionContainer.down();
 }
 
 export async function setPortFlow() {
-  console.log('Starting set port flow');
   const transmissionClient = new Transmission(settings.transmission);
   const transmissionContainer = new DockerContainer(
     settings.dockerTransmission.service,
     settings.dockerTransmission.cwd,
     settings.dockerTransmission.serviceName
   );
+  try {
+    await doSetPortFlow(transmissionClient, transmissionContainer);
+  } catch (e) {
+    console.error('Error in set port flow', e);
+    await downTransmission(transmissionContainer, `Shutting down: error in set port flow.`);
+  }
+  await dailyCheckIn();
+}
+
+async function doSetPortFlow(transmissionClient: Transmission, transmissionContainer: DockerContainer) {
+  console.log('Starting set port flow');
 
   const containerState = await transmissionContainer.getState();
   if (containerState?.state !== 'running') {
     console.log('Transmission service is not running');
+    await kvDataStorage.set({ isServiceRunning: false });
     return;
   }
+  const numRuns = kvDataStorage.get<number>('numRuns') || 0;
+  await kvDataStorage.set({ isServiceRunning: true, numRuns: numRuns + 1, lastRun: Date.now() });
 
   console.log(`Gathering info`);
   const port = await transmissionClient.getPort();
@@ -87,6 +103,9 @@ export async function setPortFlow() {
 
   console.log(`Setting port to ${newPort}`);
   await transmissionClient.setPort(newPort);
+
+  const numPortsChanged = kvDataStorage.get<number>('numPortsChanged') || 0;
+  await kvDataStorage.set({ numPortsChanged: numPortsChanged + 1 });
 
   console.log('Port set');
   const newPortOpen = await transmissionClient.testPortIfOpen();
