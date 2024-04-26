@@ -1,0 +1,14 @@
+{
+  "scripts": {
+    "start": "npx ts-node src/index.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "docker-compose": "^0.24.8",
+    "dotenv": "^16.4.5",
+    "transmission": "^0.4.10"
+  }
+}
