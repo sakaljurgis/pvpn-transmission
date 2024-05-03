@@ -60,4 +60,11 @@ export class DockerContainer {
       ip: dataRaw[6],
     }
   }
+
+  async setOpenFirewallPort(port: number) {
+    const {exitCode: exit0} = await this.exec(`iptables -A INPUT -i tun0 -p tcp --dport ${port} -j ACCEPT`);
+    const {exitCode: exit1} = await this.exec(`iptables -A INPUT -i tun0 -p udp --dport ${port} -j ACCEPT`);
+
+    return exit0 === 0 && exit1 === 0;
+  }
 }

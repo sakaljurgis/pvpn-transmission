@@ -20,8 +20,14 @@ export async function setPortFlow() {
     settings.dockerTransmission.cwd,
     settings.dockerTransmission.serviceName
   );
+  const gluetunContainer = new DockerContainer(
+    settings.dockerGluetun.service,
+    settings.dockerGluetun.cwd,
+    settings.dockerGluetun.serviceName
+  );
+
   try {
-    await doSetPortFlow(transmissionClient, transmissionContainer);
+    await doSetPortFlow(transmissionClient, transmissionContainer, gluetunContainer);
   } catch (e) {
     console.error('Error in set port flow', e);
     await downTransmission(transmissionContainer, `Shutting down: error in set port flow.`);
@@ -29,7 +35,7 @@ export async function setPortFlow() {
   await dailyCheckIn();
 }
 
-async function doSetPortFlow(transmissionClient: Transmission, transmissionContainer: DockerContainer) {
+async function doSetPortFlow(transmissionClient: Transmission, transmissionContainer: DockerContainer, gluetunContainer: DockerContainer) {
   console.log('Starting set port flow');
 
   const containerState = await transmissionContainer.getState();
@@ -102,6 +108,14 @@ async function doSetPortFlow(transmissionClient: Transmission, transmissionConta
   }
 
   console.log(`Setting port to ${newPort}`);
+  const resultOK = await gluetunContainer.setOpenFirewallPort(newPort);
+  if (!resultOK) {
+    return await downTransmission(
+      transmissionContainer,
+      `Shutting down: could not open new port in gluetun firewall`,
+    );
+  }
+  console.log(`Port in gluetun firewall opened successfully`);
   await transmissionClient.setPort(newPort);
 
   const numPortsChanged = kvDataStorage.get<number>('numPortsChanged') || 0;

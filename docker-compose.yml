@@ -1,0 +1,23 @@
+services:
+  gluetun:
+    image: qmcgaw/gluetun
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+    env_file:
+      - .env.gluetun
+    ports:
+      - "9091:9091/tcp"
+      - "8000:8000/tcp"
+
+  transmission:
+    image: lscr.io/linuxserver/transmission:latest
+    container_name: transmission
+    env_file:
+      - ./.env.transmission
+    volumes:
+      - ${CONFIG_DIR}:/config
+      - ${DOWNLOAD_DIR1}:${DOWNLOAD_DIR1}
+      - ${DOWNLOAD_DIR2}:${DOWNLOAD_DIR2}
+    restart: unless-stopped
+    network_mode: "service:gluetun"

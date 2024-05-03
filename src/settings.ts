@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-dotenv.config();
+dotenv.config({ path: '.env.app'});
 
 export const settings = {
   ipInfoCommand: `curl ${process.env.IP_INFO_URL ?? 'https://ipinfo.io'}`,
@@ -12,6 +12,11 @@ export const settings = {
     cwd: process.env.DOCKER_TRANSMISSION_CWD ?? __dirname,
     service: process.env.DOCKER_TRANSMISSION_SERVICE ?? 'transmission',
     serviceName: process.env.DOCKER_TRANSMISSION_SERVICE_NAME ?? process.env.DOCKER_TRANSMISSION_SERVICE,
+  },
+  dockerGluetun: {
+    cwd: process.env.DOCKER_GLUETUN_CWD ?? __dirname,
+    service: process.env.DOCKER_GLUETUN_SERVICE ?? 'gluetun',
+    serviceName: process.env.DOCKER_GLUETUN_SERVICE_NAME ?? process.env.DOCKER_GLUETUN_SERVICE,
   },
   allowedInterfaces: process.env.ALLOWED_INTERFACES?.split(',') ?? [],
   disallowedCountries: process.env.DISALLOWED_COUNTRIES?.split(',') ?? [],
