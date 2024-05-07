@@ -1,5 +1,6 @@
 // @ts-ignore
 import TransmissionClient from 'transmission';
+import { settings } from '../settings';
 
 type TransmissionOptions = {
   url?: string;
@@ -48,3 +49,5 @@ export class Transmission {
     });
   }
 }
+
+export const transmissionClient = new Transmission(settings.transmission);

@@ -24,4 +24,6 @@ export const settings = {
   disallowedExtIps: process.env.DISALLOWED_EXT_IPS?.split(',') ?? [],
   discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL,
   updateIntervalMs: (Number(process.env.UPDATE_INTERVAL_SECONDS) ?? 60 * 5) * 1000,
+  trackerToken: process.env.TRACKER_TOKEN,
+  trackerPort: Number(process.env.TRACKER_PORT),
 } as const;

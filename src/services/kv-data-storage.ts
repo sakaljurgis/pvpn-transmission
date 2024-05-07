@@ -2,6 +2,9 @@ import { writeFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync, readFileSync } from 'fs';
 
+import path from 'path';
+const __dirname = path.resolve();
+
 class KeyValueDataStorage {
   private readonly data: Record<string, unknown> = {};
   private readonly filePath: string;

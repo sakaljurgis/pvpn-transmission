@@ -1,41 +1,22 @@
-import { Transmission } from './transmission';
-import { DockerContainer } from './docker';
+import { transmissionClient } from './services/transmission-client';
 import { settings } from './settings';
-import { notificationService } from './notification';
-import { kvDataStorage } from './kv-data-storage';
-import { dailyCheckIn } from './check-in';
-
-async function downTransmission(transmissionContainer: DockerContainer, reason: string) {
-  console.log(reason);
-
-  await kvDataStorage.set({ isServiceRunning: false });
-  await notificationService.sendNotification(reason, true);
-  return await transmissionContainer.down();
-}
+import { notificationService } from './services/notification';
+import { kvDataStorage } from './services/kv-data-storage';
+import { dailyCheckIn } from './services/daily-check-in';
+import { transmissionContainer } from './services/transmission-container';
+import { gluetunContainer } from './services/gluetun-container';
 
 export async function setPortFlow() {
-  const transmissionClient = new Transmission(settings.transmission);
-  const transmissionContainer = new DockerContainer(
-    settings.dockerTransmission.service,
-    settings.dockerTransmission.cwd,
-    settings.dockerTransmission.serviceName
-  );
-  const gluetunContainer = new DockerContainer(
-    settings.dockerGluetun.service,
-    settings.dockerGluetun.cwd,
-    settings.dockerGluetun.serviceName
-  );
-
   try {
-    await doSetPortFlow(transmissionClient, transmissionContainer, gluetunContainer);
+    await doSetPortFlow();
   } catch (e) {
     console.error('Error in set port flow', e);
-    await downTransmission(transmissionContainer, `Shutting down: error in set port flow.`);
+    await transmissionContainer.downTransmission(`Shutting down: error in set port flow.`)
   }
   await dailyCheckIn();
 }
 
-async function doSetPortFlow(transmissionClient: Transmission, transmissionContainer: DockerContainer, gluetunContainer: DockerContainer) {
+async function doSetPortFlow() {
   console.log('Starting set port flow');
 
   const containerState = await transmissionContainer.getState();
@@ -58,11 +39,24 @@ async function doSetPortFlow(transmissionClient: Transmission, transmissionConta
   console.log(`External ip: ${ipInfo?.ip} Country: ${ipInfo?.country}`);
 
   if (!defaultInterface || !ipInfo) {
-    return await downTransmission(
-      transmissionContainer,
+    await kvDataStorage.set({
+      country: null,
+      internalIp: null,
+      externalIp: null,
+      interface: null,
+    })
+
+    return await transmissionContainer.downTransmission(
       `Shutting down: defaultInterface: ${!!defaultInterface} ipInfo: ${!!ipInfo}`,
     );
   }
+
+  await kvDataStorage.set({
+    country: ipInfo.country,
+    internalIp: defaultInterface.ip,
+    externalIp: ipInfo.ip,
+    interface: defaultInterface.interface,
+  })
 
   const countryOK = !settings.disallowedCountries.some((country) => ipInfo.country.includes(country));
   const internalIpOK = !settings.disallowedIntIps.some((ip) => defaultInterface.ip.includes(ip));
@@ -72,8 +66,7 @@ async function doSetPortFlow(transmissionClient: Transmission, transmissionConta
   console.log(`Country OK: ${countryOK} Internal IP OK: ${internalIpOK} External IP OK: ${externalIpOK} Interface OK: ${interfaceOK}`);
 
   if (!countryOK || !internalIpOK || !externalIpOK || !interfaceOK) {
-    return await downTransmission(
-      transmissionContainer,
+    return await transmissionContainer.downTransmission(
       `Shutting down: Country OK: ${countryOK}, Internal IP OK: ${internalIpOK}, External IP OK: ${externalIpOK}, Interface OK: ${interfaceOK}.`,
     );
   }
@@ -92,8 +85,7 @@ async function doSetPortFlow(transmissionClient: Transmission, transmissionConta
   console.log(`Data received: ${JSON.stringify(data)}`);
 
   if (!data.status || !data.supported) {
-    return await downTransmission(
-      transmissionContainer,
+    return await transmissionContainer.downTransmission(
       `Shutting down: could not fetch new port, data: ${JSON.stringify(data)}`,
     );
   }
@@ -101,8 +93,7 @@ async function doSetPortFlow(transmissionClient: Transmission, transmissionConta
   const newPort= Number(data.status.split(" ")[1]);
 
   if (!newPort) {
-    return await downTransmission(
-      transmissionContainer,
+    return await transmissionContainer.downTransmission(
       `Shutting down: could not parse new port, data: ${JSON.stringify(data)}`,
     );
   }
@@ -110,8 +101,7 @@ async function doSetPortFlow(transmissionClient: Transmission, transmissionConta
   console.log(`Setting port to ${newPort}`);
   const resultOK = await gluetunContainer.setOpenFirewallPort(newPort);
   if (!resultOK) {
-    return await downTransmission(
-      transmissionContainer,
+    return await transmissionContainer.downTransmission(
       `Shutting down: could not open new port in gluetun firewall`,
     );
   }
@@ -126,8 +116,7 @@ async function doSetPortFlow(transmissionClient: Transmission, transmissionConta
   console.log(`Port ${newPort} is open: ${newPortOpen}`);
 
   if (!newPortOpen) {
-    return await downTransmission(
-      transmissionContainer,
+    return await transmissionContainer.downTransmission(
       `Shutting down: new port is still not open, data: ${JSON.stringify(data)}`,
     );
   }

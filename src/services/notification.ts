@@ -1,4 +1,4 @@
-import { settings } from './settings';
+import { settings } from '../settings';
 
 class NotificationService {
   async sendNotification(message: string, important = false) {
