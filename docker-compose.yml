@@ -19,5 +19,6 @@ services:
       - ${CONFIG_DIR}:/config
       - ${DOWNLOAD_DIR1}:${DOWNLOAD_DIR1}
       - ${DOWNLOAD_DIR2}:${DOWNLOAD_DIR2}
+      - ${DOWNLOAD_DIR3}:${DOWNLOAD_DIR3}
     restart: unless-stopped
     network_mode: "service:gluetun"

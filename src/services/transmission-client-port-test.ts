@@ -54,6 +54,29 @@ export class Transmission {
       });
     });
   }
+
+  async testPortIfOpen2() {
+      this.client.callServer({ "method": "port-test" }, (err: any, arg: any) => {
+        if (err) {
+          console.error('Error testing port:', err);
+          return;
+        }
+        
+        console.log('Port test result:', arg);
+      });
+  }
 }
 
-export const transmissionClient = new Transmission(settings.transmission);
+export const transmissionClient = new Transmission({
+  host: 'localhost',
+  port: 9091,
+});
+
+transmissionClient.getPort().then(port => {
+  console.log('Current Transmission port:', port);
+}).catch(err => {
+  console.error('Error getting Transmission port:', err);
+});
+
+
+transmissionClient.testPortIfOpen2()

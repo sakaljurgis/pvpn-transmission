@@ -11,10 +11,13 @@ export async function setPortFlow() {
     await doSetPortFlow();
   } catch (e) {
     console.error('Error in set port flow', e);
-    await transmissionContainer.downTransmission(`Shutting down: error in set port flow.`)
+    const reason = e instanceof Error ? e.message : String(e);
+    await transmissionContainer.downTransmission(`Shutting down: error in set port flow. Reason: ${reason}`);
   }
   await dailyCheckIn();
 }
+
+const checkIfPortOpen = true;
 
 async function doSetPortFlow() {
   console.log('Starting set port flow');
@@ -31,7 +34,7 @@ async function doSetPortFlow() {
   console.log(`Gathering info`);
   const port = await transmissionClient.getPort();
   console.log(`Port: ${port}`);
-  const portOpen = await transmissionClient.testPortIfOpen();
+  const portOpen = checkIfPortOpen ? await transmissionClient.testPortIfOpen().catch(() => 'error_checking_port') : 'not_checked';
   console.log(`Port is open: ${portOpen}`);
   const defaultInterface = await transmissionContainer.getDefaultInterface();
   console.log(`Default interface: ${defaultInterface?.interface} Internal ip: ${defaultInterface?.ip}`);
@@ -71,12 +74,12 @@ async function doSetPortFlow() {
     );
   }
 
-  if (portOpen) {
+  if (portOpen === true) {
     console.log(`Port ${port} is open`);
     return;
   }
 
-  console.log(`Port ${port} is not open. Fetching new port.`);
+  console.log(`Port ${port} is not open or not checked (status ${portOpen}). Fetching new port.`);
 
   //fetch new port
   const request = await fetch(`https://connect.pvdatanet.com/v3/Api/port?ip[]=${defaultInterface.ip}`)
@@ -98,8 +101,14 @@ async function doSetPortFlow() {
     );
   }
 
+  if (newPort === port) {
+    console.log(`New port ${newPort} is the same as the old port ${port}`);
+    return;
+  }
+
   console.log(`Setting port to ${newPort}`);
   const resultOK = await gluetunContainer.setOpenFirewallPort(newPort);
+  // TODO - remove old port from firewall?
   if (!resultOK) {
     return await transmissionContainer.downTransmission(
       `Shutting down: could not open new port in gluetun firewall`,
@@ -112,14 +121,14 @@ async function doSetPortFlow() {
   await kvDataStorage.set({ numPortsChanged: numPortsChanged + 1 });
 
   console.log('Port set');
-  const newPortOpen = await transmissionClient.testPortIfOpen();
+  const newPortOpen = checkIfPortOpen ? await transmissionClient.testPortIfOpen().catch(() => 'error_checking_port') : 'not_checked';
   console.log(`Port ${newPort} is open: ${newPortOpen}`);
 
-  if (!newPortOpen) {
-    return await transmissionContainer.downTransmission(
-      `Shutting down: new port is still not open, data: ${JSON.stringify(data)}`,
-    );
-  }
+  // if (!newPortOpen) {
+  //   return await transmissionContainer.downTransmission(
+  //     `Shutting down: new port is still not open, data: ${JSON.stringify(data)}`,
+  //   );
+  // }
 
-  await notificationService.sendNotification(`Port changed from ${port} to ${newPort} successfully`);
+  await notificationService.sendNotification(`Port changed from ${port} to ${newPort} successfully. New port open: ${newPortOpen}.`);
 }
