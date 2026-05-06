@@ -11,7 +11,7 @@ export async function setPortFlow() {
     await doSetPortFlow();
   } catch (e) {
     console.error('Error in set port flow', e);
-    const reason = e instanceof Error ? e.message : String(e);
+    const reason = e instanceof Error ? e.message : JSON.stringify(e);
     await transmissionContainer.downTransmission(`Shutting down: error in set port flow. Reason: ${reason}`);
   }
   await dailyCheckIn();
