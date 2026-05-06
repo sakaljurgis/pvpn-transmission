@@ -10,9 +10,9 @@ export async function setPortFlow() {
   try {
     await doSetPortFlow();
   } catch (e) {
-    console.error('Error in set port flow', e);
+    console.error('Unexpected error in set port flow', e);
     const reason = e instanceof Error ? e.message : JSON.stringify(e);
-    await transmissionContainer.downTransmission(`Shutting down: error in set port flow. Reason: ${reason}`);
+    await notificationService.sendNotification(`Unexpected error in set port flow: ${reason}`, true);
   }
   await dailyCheckIn();
 }
@@ -22,36 +22,43 @@ const checkIfPortOpen = true;
 async function doSetPortFlow() {
   console.log('Starting set port flow');
 
-  const containerState = await transmissionContainer.getState();
+  const containerState = await transmissionContainer.getState().catch(() => null);
   if (containerState?.state !== 'running') {
     console.log('Transmission service is not running');
     await kvDataStorage.set({ isServiceRunning: false });
     return;
   }
+
   const numRuns = kvDataStorage.get<number>('numRuns') || 0;
   await kvDataStorage.set({ isServiceRunning: true, numRuns: numRuns + 1, lastRun: Date.now() });
 
-  console.log(`Gathering info`);
-  const port = await transmissionClient.getPort();
-  console.log(`Port: ${port}`);
-  const portOpen = checkIfPortOpen ? await transmissionClient.testPortIfOpen().catch(() => 'error_checking_port') : 'not_checked';
+  console.log('Gathering info');
+
+  let port: number;
+  try {
+    port = await transmissionClient.getPort();
+    console.log(`Port: ${port}`);
+    await kvDataStorage.set({ currentPort: port });
+  } catch (e) {
+    console.error('Failed to get port from Transmission RPC, skipping cycle', e);
+    await notificationService.sendNotification('Could not reach Transmission RPC, skipping cycle');
+    return;
+  }
+
+  const portOpen = checkIfPortOpen
+    ? await transmissionClient.testPortIfOpen().catch(() => 'error_checking_port' as const)
+    : 'not_checked';
   console.log(`Port is open: ${portOpen}`);
-  const defaultInterface = await transmissionContainer.getDefaultInterface();
+
+  const defaultInterface = await transmissionContainer.getDefaultInterface().catch(() => null);
+  const ipInfo = await transmissionContainer.getIpInfo().catch(() => null);
   console.log(`Default interface: ${defaultInterface?.interface} Internal ip: ${defaultInterface?.ip}`);
-  const ipInfo = await transmissionContainer.getIpInfo();
   console.log(`External ip: ${ipInfo?.ip} Country: ${ipInfo?.country}`);
 
   if (!defaultInterface || !ipInfo) {
-    await kvDataStorage.set({
-      country: null,
-      internalIp: null,
-      externalIp: null,
-      interface: null,
-    })
-
-    return await transmissionContainer.downTransmission(
-      `Shutting down: defaultInterface: ${!!defaultInterface} ipInfo: ${!!ipInfo}`,
-    );
+    console.error(`Could not gather network info, skipping cycle. defaultInterface: ${!!defaultInterface} ipInfo: ${!!ipInfo}`);
+    await notificationService.sendNotification(`Could not gather network info (interface: ${!!defaultInterface}, ipInfo: ${!!ipInfo}), skipping cycle`);
+    return;
   }
 
   await kvDataStorage.set({
@@ -59,7 +66,7 @@ async function doSetPortFlow() {
     internalIp: defaultInterface.ip,
     externalIp: ipInfo.ip,
     interface: defaultInterface.interface,
-  })
+  });
 
   const countryOK = !settings.disallowedCountries.some((country) => ipInfo.country.includes(country));
   const internalIpOK = !settings.disallowedIntIps.some((ip) => defaultInterface.ip.includes(ip));
@@ -79,56 +86,63 @@ async function doSetPortFlow() {
     return;
   }
 
-  console.log(`Port ${port} is not open or not checked (status ${portOpen}). Fetching new port.`);
+  console.log(`Port ${port} is not open or not checked (status: ${portOpen}). Fetching new port.`);
 
-  //fetch new port
-  const request = await fetch(`https://connect.pvdatanet.com/v3/Api/port?ip[]=${defaultInterface.ip}`)
-  const data = await request.json() as {status: string, supported: boolean}
-
-  console.log(`Data received: ${JSON.stringify(data)}`);
-
-  if (!data.status || !data.supported) {
-    return await transmissionContainer.downTransmission(
-      `Shutting down: could not fetch new port, data: ${JSON.stringify(data)}`,
-    );
+  let data: { status: string; supported: boolean };
+  try {
+    const request = await fetch(`https://connect.pvdatanet.com/v3/Api/port?ip[]=${defaultInterface.ip}`);
+    data = await request.json() as { status: string; supported: boolean };
+    console.log(`Data received: ${JSON.stringify(data)}`);
+  } catch (e) {
+    console.error('Failed to fetch new port from PrivateVPN API, skipping cycle', e);
+    await notificationService.sendNotification('Could not fetch new port from PrivateVPN API, skipping cycle');
+    return;
   }
 
-  const newPort= Number(data.status.split(" ")[1]);
+  if (!data.status || !data.supported) {
+    console.error(`PrivateVPN API returned unexpected data, skipping cycle: ${JSON.stringify(data)}`);
+    await notificationService.sendNotification(`PrivateVPN API returned unexpected data (${JSON.stringify(data)}), skipping cycle`);
+    return;
+  }
 
+  const newPort = Number(data.status.split(' ')[1]);
   if (!newPort) {
-    return await transmissionContainer.downTransmission(
-      `Shutting down: could not parse new port, data: ${JSON.stringify(data)}`,
-    );
+    console.error(`Could not parse new port, skipping cycle: ${JSON.stringify(data)}`);
+    await notificationService.sendNotification(`Could not parse new port from PrivateVPN API (${JSON.stringify(data)}), skipping cycle`);
+    return;
   }
 
   if (newPort === port) {
-    console.log(`New port ${newPort} is the same as the old port ${port}`);
+    console.log(`New port ${newPort} is the same as the old port`);
     return;
   }
 
   console.log(`Setting port to ${newPort}`);
-  const resultOK = await gluetunContainer.setOpenFirewallPort(newPort);
-  // TODO - remove old port from firewall?
-  if (!resultOK) {
-    return await transmissionContainer.downTransmission(
-      `Shutting down: could not open new port in gluetun firewall`,
-    );
+  const firewallOK = await gluetunContainer.setOpenFirewallPort(newPort);
+  if (!firewallOK) {
+    console.error('Could not open new port in Gluetun firewall, skipping cycle');
+    await notificationService.sendNotification('Could not open new port in Gluetun firewall, skipping cycle');
+    return;
   }
-  console.log(`Port in gluetun firewall opened successfully`);
-  await transmissionClient.setPort(newPort);
+  console.log('Port in Gluetun firewall opened successfully');
+
+  try {
+    await transmissionClient.setPort(newPort);
+    await kvDataStorage.set({ currentPort: newPort });
+  } catch (e) {
+    console.error('Failed to set port in Transmission, skipping cycle', e);
+    await notificationService.sendNotification('Could not set new port in Transmission RPC, skipping cycle');
+    return;
+  }
 
   const numPortsChanged = kvDataStorage.get<number>('numPortsChanged') || 0;
   await kvDataStorage.set({ numPortsChanged: numPortsChanged + 1 });
 
   console.log('Port set');
-  const newPortOpen = checkIfPortOpen ? await transmissionClient.testPortIfOpen().catch(() => 'error_checking_port') : 'not_checked';
+  const newPortOpen = checkIfPortOpen
+    ? await transmissionClient.testPortIfOpen().catch(() => 'error_checking_port' as const)
+    : 'not_checked';
   console.log(`Port ${newPort} is open: ${newPortOpen}`);
-
-  // if (!newPortOpen) {
-  //   return await transmissionContainer.downTransmission(
-  //     `Shutting down: new port is still not open, data: ${JSON.stringify(data)}`,
-  //   );
-  // }
 
   await notificationService.sendNotification(`Port changed from ${port} to ${newPort} successfully. New port open: ${newPortOpen}.`);
 }

@@ -23,7 +23,8 @@ export const settings = {
   disallowedIntIps: process.env.DISALLOWED_INTERNAL_IPS?.split(',') ?? [],
   disallowedExtIps: process.env.DISALLOWED_EXT_IPS?.split(',') ?? [],
   discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL,
-  updateIntervalMs: (Number(process.env.UPDATE_INTERVAL_SECONDS) ?? 60 * 5) * 1000,
+  updateIntervalMs: (Number(process.env.UPDATE_INTERVAL_SECONDS) || 60 * 5) * 1000,
   trackerToken: process.env.TRACKER_TOKEN,
   trackerPort: Number(process.env.TRACKER_PORT),
+  uiPort: Number(process.env.UI_PORT) || 3000,
 } as const;

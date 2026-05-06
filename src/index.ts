@@ -3,10 +3,12 @@ import { settings } from './settings';
 import { trackerServer } from './tracker/tracker';
 import { kvDataStorage } from './services/kv-data-storage';
 import { onTrackerAnnounce } from './tracker-announce-flow';
+import { startUiServer } from './ui-server';
 
 const isWorker = process.argv[2] === 'worker';
 
 if (isWorker) {
+  startUiServer(settings.uiPort);
   trackerServer.on('announce', onTrackerAnnounce);
 
   const lastRun = kvDataStorage.get<number>('lastRun') || 0;
